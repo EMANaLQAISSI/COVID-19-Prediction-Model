@@ -1,0 +1,168 @@
+CALL gds.graph.create(
+    'myGraph',
+    {
+        COVID-19: {
+            label: 'Infected',
+            properties: 'class'
+        }
+    },
+    '*'
+);
+--------------
+CALL gds.beta.knn.stream('myGraph', {
+    topK: 1,
+    nodeWeightProperty: 'class',
+    // The following parameters are set to produce a deterministic result
+    randomSeed: 150,
+    concurrency: 1,
+    sampleRate: 1.0,
+    deltaThreshold: 0.0
+})
+YIELD node1, node2, similarity
+RETURN gds.util.asNode(node1).patient AS COVID-19Patient1, gds.util.asNode(node2).patient AS COVID-19Patient2, similarity
+ORDER BY similarity DESCENDING, COVID-19Patient1, COVID-19Patient2;
+-------------
+CALL gds.beta.knn.stats('myGraph', {topK: 1, concurrency: 1, randomSeed: 42, nodeWeightProperty: 'class'})
+YIELD nodesCompared, similarityPairs;
+------------
+CALL gds.beta.knn.mutate('myGraph', {
+    mutateRelationshipType: 'KNN_SIMILAR',
+    mutateProperty: 'KNNscore',
+    topK: 1,
+    randomSeed: 42,
+    concurrency: 1,
+    nodeWeightProperty: 'class'
+})
+YIELD nodesCompared, relationshipsWritten;
+------------
+CALL gds.beta.knn.write('myGraph', {
+    writeRelationshipType: 'KNN_SIMILAR',
+    writeProperty: 'KNNscore',
+    topK: 1,
+    randomSeed: 42,
+    concurrency: 1,
+    nodeWeightProperty: 'class'
+})
+YIELD nodesCompared, relationshipsWritten;
+
+---------------
+
+CALL gds.beta.pipeline.nodeClassification.create('pipe');
+----------------
+
+CALL gds.graph.create(
+  'COVID-19',
+  'Infected',
+  {
+    KNN_SIMILAR: {
+      orientation: 'UNDIRECTED',
+      properties: 'KNNscore'
+    }
+  },
+  { nodeProperties: ['class','Breathing Problem','Fever','Dry Cough','Sore throat',	'Running Nose',	'Asthma',	'Chronic Lung Disease',	'Headache', 'Heart Disease',
+	'Diabetes',	'Hyper Tension',	'Fatigue',	'Gastrointestinal',	'Abroad travel',	'Contact with COVID Patient',	
+'Attended Large Gathering',	'Visited Public Exposed Places',	'Family working in Public Exposed Places'	,	'Wearing Masks',	'Sanitization from Market'] }
+)
+CALL gds.fastRP.stream('COVID-19',
+  {
+    embeddingDimension: 4,
+    randomSeed: 42
+  }
+)
+YIELD nodeId, embedding;
+
+CALL gds.fastRP.stats('COVID-19', { embeddingDimension: 8 })
+YIELD nodeCount
+
+CALL gds.fastRP.mutate(
+  'COVID-19',
+  {
+    embeddingDimension: 8,
+    mutateProperty: 'fastRP'
+  }
+)
+YIELD nodePropertiesWritten;
+
+CALL gds.fastRP.write(
+  'COVID-19',
+  {
+    embeddingDimension: 8,
+    writeProperty: 'fastRP'
+  }
+)
+YIELD nodePropertiesWritten;
+-------------------
+CALL gds.beta.pipeline.nodeClassification.selectFeatures('pipe', ['class','Breathing Problem','Fever','Dry Cough','Sore throat',	'Running Nose',	'Asthma',	'Chronic Lung Disease',	'Headache', 'Heart Disease',
+	'Diabetes',	'Hyper Tension',	'Fatigue',	'Gastrointestinal',	'Abroad travel',	'Contact with COVID Patient',	
+'Attended Large Gathering',	'Visited Public Exposed Places',	'Family working in Public Exposed Places'	,	'Wearing Masks',	'Sanitization from Market'])
+YIELD name, featureProperties;
+--------------------
+CALL gds.beta.pipeline.nodeClassification.configureSplit('pipe', {
+ testFraction: 0.3,
+  validationFolds: 10
+})
+YIELD splitConfig;
+--------------------
+CALL gds.beta.pipeline.nodeClassification.addLogisticRegression('pipe', {
+[
+       
+       {penalty: 0.125,patience:1,batch size:15,tolerance:0.001,learningRate:0.001,optimizer:Adam},
+       {penalty: 0.0625,patience:1,batch size:10,tolerance:0.10,learningRate:0.003,optimizer:Adam},
+       {penalty: 0.25,patience:1,batch size:20,tolerance:0.001,learningRate:0.001,optimizer:Adam},
+       {penalty: 0.5,patience:1,batch size:10,tolerance:0.10,learningRate:0.005,optimizer:SGD},
+       {penalty: 0.0625, patience:1,batch size:10,tolerance:0.001,learningRate:0.001,optimizer:SGD},
+       {penalty: 0.0625,patience:1,batch size:10,tolerance:0.001,learningRate:0.01,optimizer:Adam},
+       {penalty: 1.0,patience:1,batch size:10,tolerance:0.001,learningRate:0.005,optimizer:Adam},
+       {penalty: 2.0,patience:1,batch size:15,tolerance:0.10,learningRate:0.01,optimizer:Adam},
+       {penalty: 4.0,patience:1,batch size:10,tolerance:0.001,learningRate:0.01,optimizer:SGD},
+       {penalty: 0.125,patience:1,batch size:10,tolerance:0.001,learningRate:0.005,optimizer:Adam}
+       
+       ]})
+YIELD parameterSpace;
+-------------------
+CALL gds.alpha.pipeline.nodeClassification.addRandomForest('pipe', {[
+{criterion:ENTROPY, maxdepth:2147483647,minleafsize:1,numberOfDecisionTrees: 10, minsplitsize:2,samplesRatio:0.0,maxFeaturesRatio:1.0}
+{criterion:Gini, maxdepth:2147483647,minleafsize:1,numberOfDecisionTrees: 15, minsplitsize:2,samplesRatio:2.0,maxFeaturesRatio:1.0}
+{criterion:Gini, maxdepth:2147483647,minleafsize:1,numberOfDecisionTrees: 10, minsplitsize:2,samplesRatio:1.0,maxFeaturesRatio:1.0}
+{criterion:ENTROPY, maxdepth:2147483647,minleafsize:1,numberOfDecisionTrees: 10, minsplitsize:5,samplesRatio:5.0,maxFeaturesRatio:1.0}
+{criterion:Gini, maxdepth:2147483647,minleafsize:1,numberOfDecisionTrees: 20, minsplitsize:2,samplesRatio:1.0,maxFeaturesRatio:1.0}
+{criterion:Gini, maxdepth:2147483647,minleafsize:1,numberOfDecisionTrees: 10, minsplitsize:6,samplesRatio:0.0,maxFeaturesRatio:1.0}
+{criterion:ENTROPY, maxdepth:2147483647,minleafsize:1,numberOfDecisionTrees: 5, minsplitsize:3,samplesRatio:1.0,maxFeaturesRatio:1.0}
+{criterion:ENTROPY, maxdepth:2147483647,minleafsize:1,numberOfDecisionTrees: 10, minsplitsize:2,samplesRatio:0.0,maxFeaturesRatio:1.0}
+{criterion:Gini, maxdepth:2147483647,minleafsize:1,numberOfDecisionTrees: 20, minsplitsize:4,samplesRatio:3.0,maxFeaturesRatio:1.0}
+{criterion:Gini, maxdepth:2147483647,minleafsize:1,numberOfDecisionTrees: 5, minsplitsize:2,samplesRatio:0.0,maxFeaturesRatio:1.0}
+
+
+
+})
+YIELD parameterSpace
+RETURN parameterSpace.RandomForest AS randomForestSpace, parameterSpace.LogisticRegression AS logisticRegressionSpace;
+-------------------
+
+CALL gds.beta.pipeline.nodeClassification.train.estimate('myGraph', {
+  pipeline: 'pipe',
+  nodeLabels: ['COVID-19'],
+  modelName: 'nc-model',
+  targetProperty: 'class',
+  randomSeed: 42,
+  metrics: [ 'ACCURACY','F1_WEIGHTED' ]
+})
+YIELD requiredMemory;
+--------------------
+CALL gds.beta.pipeline.nodeClassification.train('myGraph', {
+  pipeline: 'pipe',
+  nodeLabels: ['COVID-19'],
+  modelName: 'nc-pipeline-model',
+  targetProperty: 'class',
+  randomSeed: 42,
+  metrics: ['ACCURACY','F1_WEIGHTED']
+}) YIELD modelInfo, modelSelectionStats
+RETURN
+  modelInfo.bestParameters AS winningModel,
+  modelInfo.metrics.F1_WEIGHTED.train.avg AS avgTrainScore,
+  modelInfo.metrics.F1_WEIGHTED.outerTrain AS outerTrainScore,
+  modelInfo.metrics.F1_WEIGHTED.test AS testScore,
+  [cand IN modelSelectionStats.modelCandidates | cand.metrics.F1_WEIGHTED.validation.avg] AS validationScores
+
+
+
